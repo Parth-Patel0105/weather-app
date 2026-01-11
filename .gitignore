@@ -17,3 +17,6 @@ venv/
 
 # OS
 .DS_Store
+
+# Local SSH private key (do not commit)
+parthp01502@gmail.com
