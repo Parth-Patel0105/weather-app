@@ -1,0 +1,467 @@
+# Real-Time Weather Data Application - Complete Development Manual for Cline
+
+Copy and paste this entire document directly into Cline as your prompt. It contains all specifications, file structures, and implementation steps required to build the full-stack weather application.
+
+---
+
+## PROJECT OVERVIEW
+Build a production-ready, full-stack real-time weather data application with:
+- **Frontend**: React 18+ with TypeScript, modern hooks, and responsive UI
+- **Backend**: Python Flask with async support, Redis caching, and RESTful API design
+- **External API**: OpenWeatherMap Current Weather API
+- **Performance**: 40% API latency reduction via aggressive caching strategy
+- **Testing**: 95% code coverage with PyTest (backend) and Jest (frontend)
+- **Development**: Git version control, environment configuration, and error handling
+
+---
+
+## SECTION 1: PREREQUISITES - USER HAS PROVIDED
+
+The user has provided all critical prerequisites:
+
+1. **OpenWeatherMap API Key**: `bb873ea1f6cd0272fac9fddd4f492b15`
+2. **Development Environment**:
+   - Python 3.14.2 installed locally
+   - Node.js v24.12.0 and npm installed locally
+   - Redis running in Docker container `weather-app-redis` on port 6379
+3. **Git Repository**: Initialized at `C:\Users\parth\weather-app`
+4. **Default City List**: Use ["London", "New York", "Tokyo", "Sydney", "Paris", "Dubai", "Singapore", "Mumbai", "Toronto", "Berlin"]
+5. **Project Root Directory**: `C:\Users\parth\weather-app`
+
+---
+
+## SECTION 2: PROJECT STRUCTURE
+
+Create the following directory structure. **Follow this exactly:**
+
+```
+weather-app/
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── routes.py
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── weather_service.py
+│   │   │   └── cache_service.py
+│   │   ├── utils/
+│   │   │   ├── __init__.py
+│   │   │   └── helpers.py
+│   │   └── tests/
+│   │       ├── __init__.py
+│   │       ├── conftest.py
+│   │       ├── test_routes.py
+│   │       ├── test_weather_service.py
+│   │       └── test_cache_service.py
+│   ├── requirements.txt
+│   ├── .env
+│   ├── .env.example
+│   ├── pytest.ini
+│   └── run.py
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── WeatherCard.tsx
+│   │   │   ├── CitySelector.tsx
+│   │   │   ├── LoadingSpinner.tsx
+│   │   └── ErrorBoundary.tsx
+│   │   ├── hooks/
+│   │   │   └── useWeatherData.ts
+│   │   ├── services/
+│   │   │   └── api.ts
+│   │   ├── types/
+│   │   │   └── weather.ts
+│   │   ├── App.tsx
+│   │   ├── index.tsx
+│   │   └── index.css
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── .env.example
+├── docker-compose.yml (optional)
+└── README.md
+```
+
+---
+
+## SECTION 3: STEP-BY-STEP IMPLEMENTATION
+
+### Phase 1: Backend Setup (Flask + Redis)
+
+**Step 1.1: Initialize Backend**
+- Create `backend/requirements.txt` with:
+  ```
+  flask==3.0.0
+  flask-cors==4.0.0
+  python-dotenv==1.0.0
+  redis==5.0.1
+  aiohttp==3.9.1
+  pytest==7.4.3
+  pytest-asyncio==0.23.2
+  pytest-cov==4.1.0
+  coverage==7.3.2
+  ```
+
+**Step 1.2: Environment Configuration**
+- Create `backend/.env.example`:
+  ```
+  OPENWEATHER_API_KEY=your_api_key_here
+  FLASK_ENV=development
+  FLASK_APP=run.py
+  REDIS_URL=redis://localhost:6379
+  CACHE_TTL=600
+  ```
+- Create `backend/.env` with actual values (use provided API key: bb873ea1f6cd0272fac9fddd4f492b15)
+- Create `backend/app/config.py` with Config class loading environment variables
+
+**Step 1.3: Flask Application Factory**
+- Create `backend/app/__init__.py` with create_app() factory pattern
+- Enable CORS for frontend origin (http://localhost:3000)
+- Register blueprints
+- Configure async support
+
+**Step 1.4: Redis Cache Service**
+- Create `backend/app/services/cache_service.py`:
+  - Implement `CacheService` class with async methods
+  - Methods: `get(key)`, `set(key, value, ttl)`, `exists(key)`
+  - Use Redis pipeline for batch operations
+  - Set default TTL to 10 minutes (600 seconds)
+  - Implement connection error handling with fallback to direct API call
+
+**Step 1.5: Weather API Service**
+- Create `backend/app/services/weather_service.py`:
+  - Implement `WeatherService` class with async aiohttp client
+  - Method: `fetch_weather_by_city(city_name: str)`
+  - Implement retry logic with exponential backoff (max 3 attempts)
+  - Handle OpenWeatherMap API errors (401, 404, 429, 500)
+  - Parse and normalize API response to internal schema
+  - **Critical**: Always check cache first before making external API call
+
+**Step 1.6: API Routes**
+- Create `backend/app/routes.py`:
+  - Blueprint: `/api/weather`
+  - `GET /api/weather/<city_name>`: Fetch weather for single city
+  - `GET /api/weather/batch?cities=city1,city2,city3`: Batch fetch for multiple cities
+  - `GET /api/health`: Health check endpoint (Redis + API status)
+  - Implement proper error responses (JSON format with status codes)
+  - Add request timeout handling (10 seconds max)
+
+**Step 1.7: Entry Point**
+- Create `backend/run.py`:
+  - Flask application runner
+  - Development server configuration
+  - Enable debug mode for development
+
+### Phase 2: Frontend Setup (React + TypeScript)
+
+**Step 2.1: Initialize React App**
+- Create `frontend/package.json` with:
+  ```json
+  {
+    "name": "weather-app-frontend",
+    "version": "1.0.0",
+    "private": true,
+    "dependencies": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "react-scripts": "5.0.1",
+      "typescript": "^5.3.2",
+      "axios": "^1.6.2"
+    },
+    "scripts": {
+      "start": "react-scripts start",
+      "build": "react-scripts build",
+      "test": "react-scripts test --coverage",
+      "eject": "react-scripts eject"
+    },
+    "devDependencies": {
+      "@types/react": "^18.2.0",
+      "@types/react-dom": "^18.2.0",
+      "@testing-library/react": "^14.1.2",
+      "@testing-library/jest-dom": "^6.1.5"
+    }
+  }
+  ```
+
+**Step 2.2: TypeScript Configuration**
+- Create `frontend/tsconfig.json` with strict mode enabled
+
+**Step 2.3: Type Definitions**
+- Create `frontend/src/types/weather.ts`:
+  ```typescript
+  export interface WeatherData {
+    city: string;
+    country: string;
+    temperature: number;
+    feels_like: number;
+    description: string;
+    humidity: number;
+    wind_speed: number;
+    icon: string;
+    timestamp: number;
+  }
+  ```
+
+**Step 2.4: API Service**
+- Create `frontend/src/services/api.ts`:
+  - Axios instance with base URL configuration (http://localhost:5000)
+  - Endpoints: `getWeatherByCity`, `getWeatherBatch`
+  - Implement request/response interceptors for error handling
+  - Configure timeout: 10 seconds
+  - Handle CORS errors gracefully
+
+**Step 2.5: Custom React Hook**
+- Create `frontend/src/hooks/useWeatherData.ts`:
+  - Custom hook using useEffect + useState
+  - Manage loading, error, and data states
+  - Implement refetch logic
+  - Handle component unmount cleanup
+
+**Step 2.6: UI Components**
+
+*WeatherCard.tsx:*
+- Display city name, temperature, description, humidity, wind speed
+- Use emoji/icons for weather conditions
+- Responsive grid layout
+- Loading skeleton state
+
+*CitySelector.tsx:*
+- Dropdown/search input for city selection
+- Support for batch selection (multi-select)
+- Pre-populated with default city list
+- Debounce search input (300ms)
+
+*LoadingSpinner.tsx:*
+- Reusable loading indicator
+- Accessible ARIA attributes
+
+*ErrorBoundary.tsx:*
+- React error boundary for catching render errors
+- Display user-friendly error messages
+
+**Step 2.7: Main App Component**
+- Create `frontend/src/App.tsx`:
+  - Grid layout displaying multiple WeatherCard components
+  - Header with title and refresh button
+  - Auto-refresh every 5 minutes (configurable)
+  - Last updated timestamp
+  - Global error boundary wrapper
+
+**Step 2.8: Styling**
+- Create `frontend/src/index.css`:
+  - CSS variables for colors, spacing
+  - Dark/light mode support
+  - Responsive breakpoints
+  - Animations for loading states
+
+### Phase 3: Testing Implementation
+
+**Step 3.1: Backend Tests**
+- Create `backend/pytest.ini`:
+  ```ini
+  [pytest]
+  testpaths = app/tests
+  python_files = test_*.py
+  python_classes = Test*
+  python_functions = test_*
+  addopts = --cov=app --cov-report=term-missing --cov-fail-under=95
+  asyncio_mode = auto
+  ```
+- Create `backend/app/tests/conftest.py` with fixtures for Flask test client, Redis mock, Weather API mock
+- Create test files with comprehensive coverage
+
+**Step 3.2: Frontend Tests**
+- Create component and integration tests using React Testing Library
+- Mock Axios responses
+- Test user interactions
+- Configure Jest coverage thresholds in package.json
+
+### Phase 4: Development & Deployment Configuration
+
+**Step 4.1: Environment Files**
+- Create `.env.example` files for both frontend and backend
+- Document all required variables
+
+**Step 4.2: README.md**
+- Comprehensive setup instructions
+- Architecture diagram (ASCII)
+- API documentation
+- Performance optimization notes
+- Troubleshooting section
+
+**Step 4.3: Git Configuration**
+- Create `.gitignore` files for both frontend and backend
+- Exclude `.env`, `__pycache__`, `node_modules`, build artifacts
+- Initial commit with conventional message
+
+---
+
+## SECTION 4: CRITICAL TECHNICAL REQUIREMENTS
+
+### Performance Optimization
+1. **Redis Caching Strategy**:
+   - Key pattern: `weather:{city_name}:{timestamp}`
+   - TTL: 10 minutes for current weather
+   - Use Redis hashes for batch operations
+   - Implement cache warming for default cities on startup
+
+2. **Async Implementation**:
+   - All external API calls must be async (aiohttp)
+   - Use `asyncio.gather()` for batch requests
+   - Flask routes must use async/await
+
+3. **Latency Reduction Goal (40%)**:
+   - Measure baseline: Time external API call without cache (~500ms)
+   - Measure optimized: Time with Redis cache hit (~50ms)
+   - Target: 90% reduction (far exceeds 40% requirement)
+   - Document measurements in README
+
+### Testing Requirements (95% Coverage)
+- Backend: Use `pytest-cov` plugin
+- Exclude from coverage: `__init__.py`, `run.py`, configuration files
+- Frontend: Jest coverage thresholds in package.json
+- Must test error paths, edge cases (empty city names, special characters)
+
+### Error Handling
+- **Backend**: Implement custom exception classes
+  - `WeatherAPIError`: External API failures
+  - `CacheServiceError`: Redis connection issues
+  - Return appropriate HTTP status codes
+- **Frontend**: 
+  - Network error messages for users
+  - Retry button on failure
+  - Graceful degradation if backend unavailable
+
+### Code Quality
+- Python: Follow PEP 8, use type hints everywhere
+- TypeScript: Strict mode enabled, no `any` types
+- Git: Commit messages follow conventional commits format
+
+---
+
+## SECTION 5: POTENTIAL ISSUES & TROUBLESHOOTING
+
+### Issue 1: CORS Errors
+- **Symptom**: Frontend cannot connect to backend
+- **Solution**: Ensure Flask-CORS is configured with correct origin (`http://localhost:3000`)
+- **Prevention**: Add CORS headers to all responses
+
+### Issue 2: Redis Connection Failures
+- **Symptom**: Application crashes on startup or slow responses
+- **Solution**: Implement connection retry logic with exponential backoff
+- **Fallback**: Direct API calls if Redis unavailable (log warning)
+- **Configuration**: Ensure Redis running on port 6379 (Docker container is running)
+
+### Issue 3: OpenWeatherMap API Rate Limits
+- **Symptom**: 429 errors after multiple requests
+- **Solution**: Implement request queuing, respect rate limits (60 calls/min free tier)
+- **Mitigation**: Aggressive caching minimizes external calls
+- **API Key**: Verify key is activated (user has provided key: bb873ea1f6cd0272fac9fddd4f492b15)
+
+### Issue 4: Asyncio Event Loop Conflicts
+- **Symptom**: "Event loop already running" errors in tests
+- **Solution**: Configure `pytest-asyncio` mode properly in pytest.ini
+- **Flask**: Use `flask[async]` and ensure Python 3.14+ compatibility
+
+### Issue 5: PyTest Coverage Not Reaching 95%
+- **Symptom**: Coverage stuck at 85-90%
+- **Solution**: Test all exception branches, edge cases
+- **Check**: Ensure all services have unit tests, not just integration tests
+- **Mocks**: Use `unittest.mock` for external dependencies
+
+### Issue 6: React TypeScript Compilation Errors
+- **Symptom**: `TS2322: Type ... is not assignable to type ...`
+- **Solution**: Use exact types from OpenWeatherMap API documentation
+- **Check**: Verify `tsconfig.json` strict mode settings
+- **Fix**: Create proper type guards for API responses
+
+### Issue 7: Environment Variables Not Loading
+- **Symptom**: `KeyError: 'OPENWEATHER_API_KEY'`
+- **Solution**: Ensure `.env` file exists in `backend/` directory
+- **Frontend**: Use `REACT_APP_` prefix for frontend env vars
+- **Security**: Never commit `.env` to Git (already in .gitignore)
+
+### Issue 8: Port Conflicts
+- **Symptom**: "Address already in use" errors
+- **Default Ports**: Flask (5000), React (3000), Redis (6379)
+- **Solution**: Allow port configuration via environment variables
+
+---
+
+## SECTION 6: SUCCESS CRITERIA & VALIDATION
+
+Before marking the project complete, verify:
+
+1. **Functionality**:
+   - [ ] Can fetch weather for single city
+   - [ ] Can fetch weather for multiple cities in batch
+   - [ ] Data persists in Redis for 10 minutes
+   - [ ] Cache hit reduces response time by 40%+ (target 90%)
+   - [ ] Frontend auto-refreshes every 5 minutes
+
+2. **Testing**:
+   - [ ] `pytest --cov` shows ≥95% coverage
+   - [ ] All tests pass (`npm test` for frontend)
+   - [ ] Tests include async operations, error scenarios
+
+3. **Code Quality**:
+   - [ ] No `any` types in TypeScript
+   - [ ] All Python functions have type hints
+   - [ ] No linting errors (eslint, flake8)
+
+4. **Documentation**:
+   - [ ] README.md includes setup, running, testing instructions
+   - [ ] API endpoints documented with example requests/responses
+   - [ ] Environment variables documented
+   - [ ] Performance measurements documented
+
+5. **Git**:
+   - [ ] Repository initialized
+   - [ ] `.gitignore` properly configured
+   - [ ] At least 5 meaningful commits
+   - [ ] No secrets committed
+
+---
+
+## SECTION 7: EXECUTION ORDER FOR CLINE
+
+Follow this sequence precisely:
+
+1. **Setup Phase**:
+   - Create entire directory structure
+   - Create all `requirements.txt` and `package.json` files
+   - Create configuration files (pytest.ini, tsconfig.json)
+   - Create `.env.example` files
+
+2. **Backend Phase**:
+   - Implement config.py (use provided API key: bb873ea1f6cd0272fac9fddd4f492b15)
+   - Implement cache_service.py (with connection handling)
+   - Implement weather_service.py (with async and retries)
+   - Implement routes.py (with error handling)
+   - Create Flask app factory
+   - Create run.py
+
+3. **Frontend Phase**:
+   - Implement TypeScript types
+   - Implement API service
+   - Implement custom hook
+   - Create all React components
+   - Create App.tsx and styling
+
+4. **Testing Phase**:
+   - Write all backend tests first (TDD approach)
+   - Write frontend component tests
+   - Run coverage reports
+   - Fix any gaps to reach 95%
+
+5. **Integration & Validation**:
+   - Install all dependencies (pip install, npm install)
+   - Run tests and verify coverage
+   - Start both servers (Flask and React)
+   - Provide final verification checklist
+
+---
+
+**CRITICAL**: Use the provided OpenWeatherMap API key `bb873ea1f6cd0272fac9fddd4f492b15` in the backend `.env` file. Ensure Redis connection uses `redis://localhost:6379` to connect to the Docker container.
